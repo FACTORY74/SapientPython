@@ -1,0 +1,12 @@
+include architecture.md
+include README.md
+include TODO.md
+include LICENSE
+include requirements.txt
+include setup_env.cmd
+include setup_env.ps1
+include setup_env.sh
+recursive-include Documentation *.md *.txt *.proto
+recursive-include examples *.py *.md
+recursive-include scripts *.py
+recursive-include tests *.py

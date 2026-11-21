@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sapient-interface"
+version = "0.1.0"
+description = "Python 3.15 interface for BSI Flex 335 v2.0 SAPIENT messages"
+readme = "README.md"
+requires-python = ">=3.15"
+dependencies = ["protobuf>=7.35.1,<8"]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "SAPIENT Interface Contributors"}]
+keywords = ["SAPIENT", "BSI Flex 335", "sensors", "protobuf"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: System :: Networking",
+]
+
+[project.urls]
+Documentation = "https://knowledge.bsigroup.com/products/sapient-network-of-autonomous-sensors-and-effectors-interface-control-document-specification/standard"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sapient_msg = ["*.proto", "bsi_flex_335_v2_0/*.proto"]
+
+[tool.pytest.ini_options]
+addopts = "-q --cov=sapient --cov-report=term-missing --cov-fail-under=75"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
