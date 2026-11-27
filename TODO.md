@@ -1,236 +1,153 @@
 # SAPIENT Python work backlog
 
-## Current assessment
+## Direction and boundaries
 
-This project is a substantial BSI Flex 335 v2.0 messaging library and reference
-integration framework. It provides the complete v2.0 protobuf wire model,
-message construction, validation, serialization, stream framing, TCP/TLS,
-basic node lifecycles, acknowledgement tracking, and transparent routing.
+This project already provides the BSI Flex 335 v2.0 message model, validation,
+framing, transports, and basic node lifecycle primitives. It is not yet a
+complete or independently validated SAPIENT system.
 
-It is not yet a complete or independently validated SAPIENT system. Passing the
-internal test suite demonstrates that the library is internally consistent; it
-does not establish interoperability or BSI conformance.
+Build an optional, embeddable node runtime on top of the existing library.
+The same runtime can later be hosted as a standalone process with an integration
+API. Low-level users must still be able to use messages, codecs, transports, and
+endpoints without running a node.
 
-## System boundary
+The runtime should automate protocol and connection management, not impose
+sensor algorithms, fusion decisions, tasking policy, or real-world actions.
+Applications supply those through explicit adapters and policies. A local
+integration API is not part of the SAPIENT wire standard.
 
-### This repository: protocol and connection library
+The following ten steps are ordered by priority. Each includes its intended
+outcome; tests and documentation are part of each step, not deferred to the
+end.
 
-The `sapient-interface` package owns the SAPIENT protocol boundary:
+## 1. Establish the role and conformance baseline
 
-- v2.0 message types and message construction;
-- structural and context-free semantic validation;
-- protobuf encoding and decoding;
-- byte-stream framing;
-- TCP/TLS and custom transport abstractions;
-- connection/session lifecycle primitives;
-- registration and acknowledgement correlation;
-- optional routing and persistence callbacks.
+- [ ] Map applicable BSI Flex 335 v2.0 requirements to edge, fusion, and
+  transparent message-handler behaviours, marking each as implemented,
+  partial, unsupported, or application-owned. Include initialization, message
+  directions, tasks, alerts, reconnection, platforms, and hierarchy.
+  Correct the claim in `Documentation/validation.md` that lifecycle code
+  already enforces all cross-message consistency.
 
-It does **not** own a persistent operational picture. In particular, this
-package should not decide that detections represent the same long-lived track,
-perform track fusion, retain track history, expose a track-management REST API,
-or publish map features. Those responsibilities require application policy and
-belong above the protocol library.
+  **Done when:** the matrix cites standard clauses and implementation/tests
+  where applicable, and documentation accurately describes present behaviour
+  without claiming certification.
 
-The library may retain limited protocol state needed to enforce a live session,
-such as the registered node identity, declared capabilities, selected coordinate
-systems, active tasks, acknowledgement state, and last status time. Durable
-storage should be supplied through an interface rather than embedded as a
-particular database.
+## 2. Harden registration and session identity
 
-### Kody SAPIENT service: persistent integration application
+- [ ] Strengthen managed registration and session state: correlate replies
+  with registration attempts, handle registration resend requests, define
+  duplicate-node and concurrent-session behaviour, and provide acceptance or
+  rejection policy hooks. Enforce session identity, initialization ordering,
+  and applicable destination rules; safely close or reset failed initialization.
 
-A future Kody adapter should be a separately deployable Kody microservice that
-uses this library. It should own the longer-lived operational state:
+  **Done when:** tests cover acceptance, rejection, wrong or unexpected peers,
+  duplicates, invalid ordering, and reconnecting registered nodes, while
+  preserving low-level APIs.
 
-- persistent node registrations and connection history;
-- the raw SAPIENT message/event journal;
-- detection-to-track association and track identity policy;
-- current track state and bounded track history;
-- coordinate conversion into WGS 84 longitude/latitude;
-- stale-track, expiry, merge, split, and deletion policy;
-- GeoJSON projection for Kody's `dataLayer` contract;
-- REST/workspace APIs for connections, tracks, tasks, and alerts;
-- outgoing task/alert workflows and their acknowledgement state;
-- restart recovery and, where appropriate, message replay.
+## 3. Supervise connection and status lifecycles
 
-The service should consume both externally assigned `object_id` values and
-fusion-node detections without assuming that every detection is automatically a
-new track. Track aggregation must be an explicit policy layer with provenance:
-each track should retain the contributing node/detection identifiers.
+- [ ] Add an opt-in supervised receive loop that detects disconnection,
+  reconnects with configurable limits and cancellation, and applies the
+  standard's re-registration timing. Provide periodic status and configurable
+  liveness monitoring, including the applicable registered status interval
+  rules. Define shutdown and failed `GOODBYE` behaviour; expose frame-size and
+  connection-monitoring configuration.
 
-The normal data flow should be event-driven rather than creating tracks through
-REST calls:
+  **Done when:** tests exercise timeouts, short and long outages, status
+  scheduling, liveness transitions, cancellation, and failed shutdown without
+  requiring applications to drive recovery manually.
 
-```text
-SAPIENT Registration/Status/Detection/Alert messages
-                         |
-                         v
-             Kody SAPIENT integration service
-             |-- durable event journal
-             |-- node/session registry
-             |-- track aggregation and history
-             |-- task/alert workflows
-             `-- WGS 84 GeoJSON projection
-                         |
-                         v
-                    Kody map
-```
+## 4. Enforce stateful, role-aware protocol rules
 
-REST API calls should configure the service, query tracks/history, correct or
-annotate tracks, and initiate operator tasks. They should not normally be the
-primary mechanism for creating live tracks. A simulation/test endpoint may
-inject synthetic detections, but should feed them through the same ingestion
-pipeline as network messages.
+- [ ] Validate messages against registered state where the standard requires
+  it: roles and message flows, declared capabilities, modes, status categories
+  and intervals, coordinate systems and datum, and target task support.
+  Handle platform/dependent-node declarations. Separate normative checks from
+  configurable deployment policy and make violations observable.
 
-## Protocol conformance work
+  **Done when:** focused tests demonstrate both valid flows and rejection of
+  inconsistent messages, and the documentation identifies checks that remain
+  application-owned or unsupported.
 
-### Registration and identity
+## 5. Provide edge-node behaviour adapters
 
-- [ ] Correlate an acknowledgement with the active registration attempt.
-- [ ] Support a fusion node requesting registration to be resent.
-- [ ] Add registration policy callbacks so a managed fusion server can reject
-  unsupported, duplicate, unauthorized, incompatible, or over-capacity nodes.
-- [ ] Define and test duplicate-node and concurrent-session behavior.
+- [ ] Define an embeddable edge runtime with sensor and effector adapters:
+  publish status, detections and alerts; receive tasks and alert responses;
+  invoke application handlers; and send appropriate acknowledgements. Support
+  applicable default-task, override, and command-completion behaviour without
+  implementing device-specific actions or assuming every node is taskable.
 
-### Connection lifecycle
+  **Done when:** a simulated sensor and effector demonstrate registration,
+  reporting, task acceptance or rejection, execution callbacks and completion,
+  including handler failures and shutdown.
 
-- [ ] Add a supervised receive loop that detects connection loss and invokes
-  configurable reconnection automatically.
-- [ ] Preserve the two-minute re-registration rule while making recovery
-  automatic rather than application-triggered.
-- [ ] Ensure failed initialization closes or safely resets its connection.
-- [ ] Add keepalive/connection-monitoring configuration appropriate to deployed
-  TCP environments.
-- [ ] Make maximum message size configurable through edge and fusion role APIs.
-- [ ] Test TLS client and server operation with real certificates, hostname
-  verification, rejection cases, and reconnects.
-- [ ] Define shutdown behavior when sending `SYSTEM_GOODBYE` itself fails.
+## 6. Provide fusion-node workflows and extension points
 
-### Stateful protocol enforcement
+- [ ] Build an embeddable fusion runtime that maintains a node registry,
+  dispatches reports and alerts, sends addressed tasks and alert responses, and
+  correlates acknowledgements. Provide explicit hooks for fusion, task
+  selection, approval, and registration policy; do not make operational
+  decisions or fuse tracks by default. Keep transparent routing separate from
+  fusion behaviour.
 
-- [ ] Enforce that all messages on a registered session use the registered
-  `node_id` and valid destination rules.
-- [ ] Check later location values against the coordinate systems and datum
-  declared during registration.
-- [ ] Check status categories, units, and intervals against the registration.
-- [ ] Check detection classifications and modes against declared capabilities.
-- [ ] Check tasks against the commands, regions, modes, and coordinate systems
-  declared by the target node.
-- [ ] Track the last status time and expose a configurable offline/liveness
-  decision, including the registered three-interval rule.
-- [ ] Provide a regular status scheduler/helper for edge-node applications.
-- [ ] Implement platform/dependent-node consistency checks.
-- [ ] Implement or explicitly scope out hierarchical fusion-node coordination.
-- [ ] Reconcile the validation documentation with the checks actually enforced
-  by the lifecycle layer.
+  **Done when:** tests and an example show multiple edge nodes registering,
+  producing reports, receiving an application-selected task, and reporting its
+  outcome, including an alert response and observable failures.
 
-### Persistence and operations
+## 7. Add persistence and operational resilience
 
-- [ ] Define storage protocols for registered-node state, messages/events, and
-  workflow state without coupling the library to one database.
-- [ ] Restore appropriate registration and workflow state after restart.
-- [ ] Define buffering/replay behavior during disconnection.
-- [ ] Add bounded retention and back-pressure behavior.
-- [ ] Replace or bound the fusion server's unbounded in-memory error list.
-- [ ] Add structured logging and operational metrics.
-- [ ] Ensure persistence failures are observable and cannot silently lose data.
+- [ ] Define storage interfaces for registrations/capabilities, events, and
+  workflow state, with a usable reference implementation independent of any
+  particular production database. Specify restart recovery, disconnected
+  buffering/replay, duplicate handling, retention, capacity and back-pressure.
+  Bound error storage and expose persistence failures, structured logs and
+  health metrics.
 
-### Validation coverage
+  **Done when:** restart, unavailable storage, full buffers, and replay tests
+  demonstrate the documented guarantees; no silent data-loss or durability
+  guarantee is implied beyond the selected implementation.
 
-- [ ] Build a requirement-to-code/test traceability matrix for every normative
-  `shall` in BSI Flex 335 v2.0 that applies to the software boundary.
-- [ ] Review every schema field and textual semantic constraint, not only the
-  currently selected rules.
-- [ ] Add boundary and invalid-value tests for every coordinate system, datum,
-  range/bearing unit, enumeration, timestamp, and identifier field.
-- [ ] Validate cross-field defaults and conditional fields described in the
-  standard.
-- [ ] Test maximum-size messages and resource-exhaustion cases.
-- [ ] Add fuzz/property tests for framing, protobuf decoding, and validation.
-- [ ] Add malformed and adversarial peer tests.
+## 8. Support hierarchical fusion nodes
 
-### Interoperability and release readiness
+- [ ] Compose a downstream fusion server and an upstream edge-like client in
+  one runtime. Allow a child fusion node to register its supported aggregate
+  capabilities, publish reports and coverage changes, and receive parent
+  tasks. Delegate aggregation and downstream task decisions to application
+  policy; account for platform relationships where applicable.
 
-- [ ] Obtain or create independent golden protobuf payloads for every outer
-  message type and representative inner-message combinations.
-- [ ] Test against at least one independent SAPIENT peer implementation.
-- [ ] Capture interoperability results, peer version, transport, and test cases.
-- [ ] Add a conformance test report distinct from ordinary unit-test coverage.
-- [ ] Add Windows and Linux CI with clean package installation.
-- [ ] Test source distribution and wheel installation in isolated environments.
-- [ ] Document supported versus unsupported standard clauses.
-- [ ] Do not describe the package as fully conformant until the traceability and
-  independent interoperability work is complete.
-- [ ] Promote from alpha only after the public API and lifecycle behavior are
-  stable.
+  **Done when:** a parent/child/edge integration test covers registration,
+  reporting, task and acknowledgement flow, and connection loss on either
+  side without assuming a fixed hierarchy depth.
 
-## Kody integration plan
+## 9. Offer an optional process and integration API
 
-The adapter should follow Kody's independent-microservice boundary and expose
-`GET /api/kody/manifest`. It should not add SAPIENT-specific logic to the Kody
-core.
+- [ ] Host the same embeddable runtime as a configurable standalone service.
+  Provide an application-facing API to inspect nodes, capabilities, health,
+  recent events and workflow state, subscribe to updates, and submit permitted
+  tasks or alert responses. Define authentication, authorization, audit,
+  operator approval and transport-security boundaries before exposing control
+  operations. Keep this API distinct from the SAPIENT wire interface.
 
-### Phase 1: read-only situational picture
+  **Done when:** an example starts and stops the service, queries and subscribes
+  to state, and submits an authorized task; tests cover rejected access and
+  failed operations. Existing applications can still embed the runtime.
 
-- [ ] Create a standalone `sapient` Kody service using Python 3.15.
-- [ ] Add this package and `protobuf` to Kody's offline wheel bundle.
-- [ ] Accept configured SAPIENT TCP/TLS connections.
-- [ ] Persist registrations, statuses, detections, alerts, errors, and raw
-  envelopes with receipt timestamps.
-- [ ] Maintain node connection and liveness state.
-- [ ] Convert WGS 84 Cartesian detections to GeoJSON features.
-- [ ] Preserve source node, object, report, classification, confidence, and
-  timestamp provenance in GeoJSON properties.
-- [ ] Implement the Kody `dataLayer` manifest and revision behavior.
-- [ ] Provide configuration and health endpoints.
-- [ ] Provide a workspace showing connections, registered capabilities, errors,
-  and recent messages.
+  A Kody adapter remains a separate integration application. Its manifest,
+  persistent operational picture, track association/history, coordinate
+  conversion, GeoJSON projection and operator workspace are Kody-specific;
+  live detections should enter through the same event pipeline rather than
+  creating tracks directly through REST.
 
-### Phase 2: coordinate and track processing
+## 10. Verify interoperability and release readiness
 
-- [ ] Convert UTM locations to WGS 84.
-- [ ] Convert range/bearing detections using the reporting node's known location
-  and declared datum.
-- [ ] Define identity rules for node `object_id`, fused detections, and associated
-  detections.
-- [ ] Implement persistent current-track state and bounded history.
-- [ ] Define stale, expired, merged, split, and manually corrected track states.
-- [ ] Retain raw observations separately from derived track state.
-- [ ] Make aggregation policy configurable and testable.
-- [ ] Publish track trails and source/provenance information to Kody.
+- [ ] Complete the clause-to-test matrix and publish supported and unsupported
+  requirements. Test independent golden payloads and an independent SAPIENT
+  peer; record peer version, transport and results. Add malformed/adversarial
+  peer, framing and validation property tests, real-certificate TLS tests,
+  resource limits, and clean Windows/Linux package-install checks.
 
-### Phase 3: bidirectional operation
-
-- [ ] Add APIs and workspace actions for creating and sending SAPIENT tasks.
-- [ ] Allow a selected Kody feature or drawn region to populate task geometry.
-- [ ] Transform outgoing task coordinates into the target node's registered
-  coordinate system.
-- [ ] Display task acknowledgement transitions and completion/failure reasons.
-- [ ] Display and acknowledge alerts.
-- [ ] Recover unfinished task/alert workflows after restart.
-- [ ] Add authorization and audit records for operator-generated commands.
-
-### Phase 4: deployment hardening
-
-- [ ] Add TLS certificate and trust-store configuration without storing secrets
-  in ordinary Kody configuration responses.
-- [ ] Add retention, capacity, and back-pressure controls.
-- [ ] Add service metrics, structured logs, and readiness/liveness endpoints.
-- [ ] Test restart, network partition, delayed messages, duplicates, and
-  out-of-order delivery.
-- [ ] Run end-to-end tests using an independent SAPIENT producer and Kody.
-- [ ] Document offline installation, ports, storage locations, backup, and
-  recovery.
-
-## Definition of done
-
-The protocol package may be described as a full implementation only when:
-
-1. every applicable normative requirement is mapped to implementation and an
-   automated or documented verification;
-2. registration, connection loss, liveness, state consistency, and hierarchy
-   are implemented or explicitly declared outside the supported boundary;
-3. the library interoperates with an independent SAPIENT implementation;
-4. supported and unsupported clauses are published; and
-5. release packaging and clean deployment are verified on supported platforms.
+  **Done when:** a reproducible conformance-oriented report distinguishes
+  internal tests from independent interoperability evidence, packaging and
+  deployment are verified, and release claims match the verified scope. Do not
+  claim full conformance solely because the internal suite passes.
